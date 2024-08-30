@@ -1,5 +1,12 @@
 name: pygbag_build
-on: [workflow_dispatch]
+on:
+  # Triggers the workflow on push only for the main branch (Lint and Launch)
+  push:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
 
 jobs:
   build-pygbag:
