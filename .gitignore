@@ -9,3 +9,7 @@ __pycache__/
 /build
 /dist
 
+*.pkl
+start_file.txt
+
+temp_*.png
