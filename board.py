@@ -6,7 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from collections import defaultdict
 import pickle
-from typing import Dict,Self
+from typing import Dict, Self
 from search import dhokla_first_search, best_first_search, bread_first_search
 from utils import Position
 from search import Node
@@ -15,22 +15,27 @@ import time
 
 import argparse
 
+_POSITIONS = [Position(-1, 0), Position(1, 0), Position(0, 1), Position(0, -1)]
+
+
 def construct_matrix_from_hashmap(board_hashmap):
-    n=7
-    matrix = [[board_hashmap[Position(i,j)] for j in range(n)] for i in range(n)]
+    n = 7
+    matrix = [[board_hashmap[Position(i, j)] for j in range(n)] for i in range(n)]
     return matrix
 
 
 def rotate90(mat_mat):
-    n= len(mat_mat)
+    n = len(mat_mat)
     matrix = [[mat_mat[j][i] for j in range(n)] for i in range(n)]
     # Reverse each row
     for i in range(n):
         matrix[i].reverse()
     return matrix
 
-def str_matrix(matrix:list[list[NodeState]]):
+
+def str_matrix(matrix: list[list[NodeState]]):
     return "".join(["".join([str(s) for s in row]) for row in matrix])
+
 
 class Move:
     """
@@ -75,6 +80,7 @@ class Board:
     def __init__(self):
 
         self._SIZE = 7
+        self._CENTER = Position(3, 3)
 
         # state
         self.num_marbles = 32
@@ -123,11 +129,11 @@ class Board:
     def __hash__(self) -> int:
         # to allow for hashing of the board state, we use the string representation
         # create a list of all rotated states
-        top = construct_matrix_from_hashmap(self._board)
-        hashed = hash(str_matrix(top))
+        top = construct_matrix_from_hashmap(self._board) # create a matrix from the hashmap
+        hashed = hash(str_matrix(top)) # create a string of the matrix and hash it
         for _ in range(3):
             top = rotate90(top)
-            hashed+=hash(str_matrix(top))
+            hashed += hash(str_matrix(top))
 
         return hashed
 
@@ -150,27 +156,89 @@ class Board:
     def __setitem__(self, pos: Position, value: NodeState):
         self._board[pos] = value
 
-    def __le__(self, other:Self):
-        #return self.num_marbles <= other.num_marbles
-        return self._distance_from_center()  <= other._distance_from_center()
+    def __lt__(self, other: Self):
+        # return self.num_marbles < other.num_marbles
+        # heuristic: count the number of possible
+        return self._num_corners() < other._num_corners()
 
     def __eq__(self, other):
         return hash(self) == hash(other)
 
     def _total_possible_moves(self):
-        marble_positions = [pos for pos, state in self._board.items() if state == NodeState.FILLED]
+        marble_positions = [
+            pos for pos, state in self._board.items() if state == NodeState.FILLED
+        ]
         total = 0
         for marble in marble_positions:
-            total+=len(self.get_possible_move_locations(marble))
+            total += len(self.get_possible_move_locations(marble))
         return total
 
     def _distance_from_center(self):
-        marble_positions = [pos for pos, state in self._board.items() if state == NodeState.FILLED]
+        """
+        Potential Heuristic: Manhattan distance of all marbles from the center
+        """
+        marble_positions = [
+            pos for pos, state in self._board.items() if state == NodeState.FILLED
+        ]
         manhattan = 0
         for position in marble_positions:
-            diff = self._CENTER -  position
+            diff = self._CENTER - position
             manhattan += abs(diff.row) + abs(diff.column)
         return manhattan
+
+    def _num_isolated(self):
+        """
+        Potential Heuristic: Counts the number of marbles which have no adjacent marbles
+        """
+        marble_positions = [
+            pos for pos, state in self._board.items() if state == NodeState.FILLED
+        ]
+        count = 0
+        for position in marble_positions:
+            found = 0
+            for neig in _POSITIONS:
+                if self._board[position + neig] == NodeState.FILLED:
+                    found = 0
+                    break
+                else:
+                    found += 1
+            count += 1 if found else 0
+        return count
+    
+    def _num_marbles(self):
+        """
+        Potential Heuristic: Counts the number of marbles
+        """
+        return self.num_marbles
+    
+    def _num_corners(self):
+        """
+        Final Heuristic: Mathematics related to # of corners occupied, and # of marbles that can move to corners
+        """
+
+        # corners: cB
+        cB_pos = [
+            Position(0, 2),
+            Position(0, 4),
+            Position(2, 0),
+            Position(2, 6),
+            Position(4, 0),
+            Position(4, 6),
+            Position(6, 2),
+            Position(6, 4),
+        ]
+        # potential corners: pB
+        pB_pos = [
+            Position(2, 2),
+            Position(2, 4),
+            Position(4, 2),
+            Position(4, 4),
+        ] + cB_pos
+
+        cB_count = [self._board[pos] for pos in cB_pos].count(NodeState.FILLED)
+        pB_count = [self._board[pos] for pos in pB_pos].count(NodeState.FILLED)
+
+        return cB_count + (pB_count // 4)
 
     def solvable(self) -> bool:
         """
@@ -256,13 +324,17 @@ class Board:
                 continue
 
             if self[src + Position(i, 0)] == NodeState.EMPTY:
-                moves.append(Move(src,src + Position(i, 0)))
+                moves.append(Move(src, src + Position(i, 0)))
             if self[src + Position(0, i)] == NodeState.EMPTY:
-                moves.append(Move(src,src + Position(0, i)))
+                moves.append(Move(src, src + Position(0, i)))
 
         # filter the positions based on if the in-between has a marble
 
-        return [move.dst for move in moves if self[move.get_in_between_pos()] == NodeState.FILLED]
+        return [
+            move.dst
+            for move in moves
+            if self[move.get_in_between_pos()] == NodeState.FILLED
+        ]
 
     def move_gen(self) -> list[Board]:
         """
@@ -294,7 +366,7 @@ class Board:
         """
         Returns True if the game is over
         """
-        return self.num_marbles == 1 and self[Position(3,3)] == NodeState.FILLED
+        return self.num_marbles == 1 and self[self._CENTER] == NodeState.FILLED
 
 
 """
